@@ -2,75 +2,20 @@ name: Build Prebuilds
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+  pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{github.workflow}}-${{github.ref}}
+  cancel-in-progress: true
+
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - run: npm install
-      - run: npx prebuildify --napi --strip || echo "Prebuildify may have failed"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: prebuilds-${{ matrix.os }}
-          path: prebuilds/
-          if-no-files-found: ignore
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Merge prebuilds
-        run: |
-          mkdir -p prebuilds
-          find artifacts -type f -name "*.node" | while read src; do
-            platform=$(basename $(dirname $(dirname "$src")) | sed 's/prebuilds-//')
-            mkdir -p "prebuilds/$platform"
-            cp "$src" "prebuilds/$platform/"
-          done
-          ls -R prebuilds/ || echo "No prebuilds found"
-
-      - run: npm install
-
-      - name: Bump version and publish
-        run: |
-          npm version patch -m "chore: release %s with prebuilds"
-          git push && git push --tags
-          npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  npm:
+    uses: tree-sitter/workflows/.github/workflows/package-npm.yml@main
+    secrets:
+      NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+    with:
+      generate: false
